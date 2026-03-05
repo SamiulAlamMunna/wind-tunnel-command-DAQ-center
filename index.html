@@ -1,0 +1,1342 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Wind Tunnel Command Center</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;700;900&display=swap');
+
+  :root {
+    --bg:      #060B13;
+    --panel:   #0C1623;
+    --border:  #192D44;
+    --accent:  #00C8F0;
+    --drag:    #FF6B35;
+    --green:   #00E58A;
+    --yellow:  #FFD060;
+    --purple:  #A78BFA;
+    --red:     #FF4466;
+    --text:    #C8DCF0;
+    --dim:     #3A5570;
+    --raw-l:   rgba(26,58,90,0.7);
+    --raw-d:   rgba(74,32,16,0.7);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 13px;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* ── Layout ── */
+  #app {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+    padding: 10px;
+    gap: 10px;
+  }
+
+  #sidebar {
+    width: 400px;
+    min-width: 400px;
+    overflow-y: auto;
+    overflow-x: hidden;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding-right: 6px;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) var(--panel);
+  }
+  #sidebar::-webkit-scrollbar { width: 5px; }
+  #sidebar::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+  #plots-area {
+    flex: 1;
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    grid-template-rows: 1fr 1fr;
+    gap: 8px;
+    min-width: 0;
+  }
+
+  .plot-wrap {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+
+  .plot-title {
+    font-family: 'Orbitron', monospace;
+    font-size: 8px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    margin-bottom: 4px;
+    padding-bottom: 4px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+
+  .plot-wrap canvas { flex: 1; min-height: 0; }
+
+  /* ── Groups ── */
+  .group {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 12px;
+  }
+  .group-title {
+    font-family: 'Orbitron', monospace;
+    font-size: 8px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    margin-bottom: 10px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  /* ── Header ── */
+  #header {
+    text-align: center;
+    padding: 6px 0;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    flex-shrink: 0;
+  }
+  #header h1 {
+    font-family: 'Orbitron', monospace;
+    font-size: 11px;
+    font-weight: 900;
+    letter-spacing: 3px;
+    color: var(--accent);
+  }
+  #header p {
+    font-size: 9px;
+    color: var(--dim);
+    margin-top: 2px;
+  }
+
+  /* ── Buttons ── */
+  .btn-primary {
+    width: 100%;
+    padding: 8px;
+    background: transparent;
+    color: var(--accent);
+    border: 1.5px solid var(--accent);
+    border-radius: 6px;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 11px;
+    font-weight: bold;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  .btn-primary:hover { background: rgba(0,200,240,0.1); }
+  .btn-primary.active { background: rgba(0,200,240,0.2); }
+  .btn-primary.drag { color: var(--drag); border-color: var(--drag); }
+  .btn-primary.drag:hover { background: rgba(255,107,53,0.1); }
+  .btn-primary.yellow { color: var(--yellow); border-color: var(--yellow); }
+  .btn-primary.yellow:hover { background: rgba(255,208,96,0.1); }
+  .btn-primary.green { color: var(--green); border-color: var(--green); }
+  .btn-primary.green:hover { background: rgba(0,229,138,0.1); }
+  .btn-primary.red { color: var(--red); border-color: var(--red); }
+  .btn-primary.red:hover { background: rgba(255,68,102,0.1); }
+  .btn-primary:disabled { opacity: 0.3; cursor: not-allowed; }
+
+  .btn-small {
+    padding: 5px 8px;
+    background: var(--panel);
+    color: var(--dim);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 10px;
+    cursor: pointer;
+    transition: all 0.12s;
+  }
+  .btn-small:hover { background: var(--border); color: var(--text); }
+  .btn-small.yellow { color: var(--yellow); }
+  .btn-small.green  { color: var(--green); }
+
+  .filter-btn {
+    flex: 1;
+    padding: 6px 4px;
+    background: var(--panel);
+    color: var(--dim);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 9px;
+    cursor: pointer;
+    transition: all 0.12s;
+  }
+  .filter-btn:hover { background: var(--border); color: var(--text); }
+  .filter-btn.active { background: rgba(0,200,240,0.13); color: var(--accent); border-color: var(--accent); font-weight: bold; }
+
+  /* ── Inputs ── */
+  select, input[type=number], input[type=text] {
+    background: var(--panel);
+    color: var(--accent);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 5px 8px;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 11px;
+    outline: none;
+  }
+  select { color: var(--text); }
+  select:focus, input:focus { border-color: var(--accent); }
+
+  input[type=range] {
+    -webkit-appearance: none;
+    width: 100%;
+    height: 4px;
+    border-radius: 2px;
+    background: var(--border);
+    outline: none;
+    cursor: pointer;
+  }
+  input[type=range].accent::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 14px; height: 14px;
+    background: var(--accent);
+    border-radius: 50%;
+    cursor: pointer;
+  }
+  input[type=range].yellow::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 14px; height: 14px;
+    background: var(--yellow);
+    border-radius: 50%;
+    cursor: pointer;
+  }
+
+  input[type=checkbox] { accent-color: var(--accent); }
+
+  /* ── Connection ── */
+  .row { display: flex; gap: 6px; align-items: center; }
+  .row-label { color: var(--dim); font-size: 10px; white-space: nowrap; }
+
+  #conn-status {
+    text-align: center;
+    font-family: 'Orbitron', monospace;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 4px;
+    border-radius: 4px;
+    margin-top: 4px;
+  }
+  #conn-status.online { color: var(--green); }
+  #conn-status.offline { color: var(--drag); }
+
+  /* ── AoA ── */
+  #aoa-big {
+    text-align: center;
+    font-family: 'Orbitron', monospace;
+    font-size: 36px;
+    font-weight: 900;
+    color: var(--yellow);
+    padding: 8px;
+    border: 1px solid rgba(255,208,96,0.3);
+    border-radius: 8px;
+    background: rgba(255,208,96,0.05);
+    line-height: 1;
+    margin-bottom: 4px;
+    transition: color 0.2s, border-color 0.2s, background 0.2s;
+  }
+  #aoa-fb { text-align: center; font-size: 9px; color: var(--dim); margin-bottom: 6px; }
+  .sep { height: 1px; background: var(--border); margin: 6px 0; }
+
+  .step-row { display: flex; gap: 3px; flex-wrap: nowrap; }
+  .preset-row { display: flex; gap: 3px; margin-bottom: 3px; }
+
+  /* ── Readout ── */
+  #readout-wrap { display: flex; gap: 6px; }
+  .ch-panel {
+    flex: 1;
+    background: var(--bg);
+    border-radius: 6px;
+    padding: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+  .ch-panel.lift { border: 1px solid rgba(0,200,240,0.25); }
+  .ch-panel.drag { border: 1px solid rgba(255,107,53,0.25); }
+
+  .ch-label {
+    text-align: center;
+    font-family: 'Orbitron', monospace;
+    font-size: 8px;
+    font-weight: 700;
+    padding: 3px 6px;
+    border-radius: 4px;
+    letter-spacing: 1px;
+  }
+  .ch-label.lift { background: var(--accent); color: var(--bg); }
+  .ch-label.drag { background: var(--drag); color: var(--bg); }
+
+  .val-raw { text-align: center; font-size: 11px; font-weight: bold; }
+  .val-raw.lift { color: var(--accent); }
+  .val-raw.drag { color: var(--drag); }
+
+  .val-filt { text-align: center; font-family: 'Orbitron', monospace; font-size: 28px; font-weight: 900; line-height: 1.1; }
+  .val-filt.lift { color: var(--accent); }
+  .val-filt.drag { color: var(--drag); }
+
+  .stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 8px; margin-top: 2px; }
+  .stat-item { display: flex; flex-direction: column; }
+  .stat-key { font-size: 8px; color: var(--dim); }
+  .stat-val { font-size: 10px; color: var(--yellow); font-weight: bold; }
+
+  .ld-ratio-label { font-size: 9px; color: var(--purple); font-weight: bold; margin-top: 4px; }
+  .ld-ratio-val {
+    text-align: center;
+    font-family: 'Orbitron', monospace;
+    font-size: 22px;
+    font-weight: 900;
+    color: var(--purple);
+  }
+  .dim-tiny { font-size: 9px; color: var(--dim); }
+
+  /* ── Filter ── */
+  .filter-row { display: flex; gap: 4px; margin-bottom: 6px; }
+  .filter-desc {
+    font-size: 9px;
+    color: var(--accent);
+    background: rgba(0,200,240,0.07);
+    border-left: 3px solid var(--accent);
+    padding: 5px 8px;
+    border-radius: 0 3px 3px 0;
+    min-height: 28px;
+    margin-bottom: 6px;
+  }
+
+  /* ── Calibration tabs ── */
+  .tab-bar { display: flex; gap: 0; margin-bottom: 8px; }
+  .tab-btn {
+    flex: 1;
+    padding: 6px;
+    background: var(--panel);
+    color: var(--dim);
+    border: 1px solid var(--border);
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 9px;
+    cursor: pointer;
+    text-align: center;
+  }
+  .tab-btn:first-child { border-radius: 4px 0 0 4px; }
+  .tab-btn:last-child  { border-radius: 0 4px 4px 0; }
+  .tab-btn.active { color: var(--accent); border-bottom: 2px solid var(--accent); }
+  .tab-content { display: none; }
+  .tab-content.active { display: block; }
+
+  /* ── Export ── */
+  #rec-count { text-align: center; font-size: 10px; color: var(--dim); margin-bottom: 6px; }
+
+  /* ── Serial monitor ── */
+  #serial-mon {
+    background: var(--bg);
+    color: var(--green);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 6px 8px;
+    font-size: 9px;
+    height: 80px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    word-break: break-all;
+  }
+
+  /* ── Status bar ── */
+  #statusbar {
+    background: var(--panel);
+    border-top: 1px solid var(--border);
+    padding: 3px 14px;
+    font-size: 9px;
+    color: var(--dim);
+    flex-shrink: 0;
+  }
+
+  /* ── Serial not supported notice ── */
+  #serial-notice {
+    background: rgba(255,208,96,0.08);
+    border: 1px solid rgba(255,208,96,0.3);
+    border-radius: 6px;
+    padding: 8px;
+    font-size: 9px;
+    color: var(--yellow);
+    line-height: 1.5;
+    margin-bottom: 4px;
+  }
+  #serial-notice a { color: var(--accent); }
+
+  /* ── Demo mode ── */
+  #demo-badge {
+    display: inline-block;
+    background: rgba(255,208,96,0.15);
+    color: var(--yellow);
+    border: 1px solid var(--yellow);
+    border-radius: 4px;
+    padding: 2px 8px;
+    font-size: 9px;
+    font-weight: bold;
+    margin-top: 4px;
+  }
+
+  /* Scrollbar for plots area */
+  .plot-wrap::-webkit-scrollbar { display: none; }
+</style>
+</head>
+<body>
+
+<div id="app">
+  <!-- ════════════════════ SIDEBAR ════════════════════ -->
+  <div id="sidebar">
+
+    <!-- Header -->
+    <div id="header">
+      <h1>WIND TUNNEL COMMAND CENTER</h1>
+      <p>LIFT: Cell 1 &nbsp;|&nbsp; DRAG: Cell 2 &nbsp;|&nbsp; AoA: Servo Pin 9</p>
+      <span id="demo-badge" style="display:none">◈ DEMO MODE — simulated data</span>
+    </div>
+
+    <!-- Connection -->
+    <div class="group">
+      <div class="group-title" style="color:var(--accent)">CONNECTION</div>
+      <div id="serial-notice" style="display:none">
+        ⚠ Web Serial not available in this browser.<br>
+        Use <strong>Chrome / Edge</strong> (desktop) for Arduino connection.<br>
+        Click <strong>DEMO MODE</strong> to simulate data.
+      </div>
+      <div class="row" style="margin-bottom:6px">
+        <button class="btn-primary" id="btn-connect" onclick="toggleConnect()" style="flex:1">CONNECT</button>
+        <button class="btn-small" onclick="refreshPorts()" style="width:34px;height:34px;font-size:14px;flex-shrink:0">⟳</button>
+      </div>
+      <div class="row" style="margin-bottom:6px">
+        <span class="row-label">Baud:</span>
+        <select id="sel-baud" style="flex:1">
+          <option>57600</option><option>9600</option><option>115200</option><option>38400</option>
+        </select>
+      </div>
+      <button class="btn-small" onclick="startDemo()" style="width:100%;color:var(--yellow)">◈  DEMO MODE (simulated data)</button>
+      <div id="conn-status" class="offline">● OFFLINE</div>
+    </div>
+
+    <!-- AoA Control -->
+    <div class="group">
+      <div class="group-title" style="color:var(--yellow)">ANGLE OF ATTACK CONTROL</div>
+      <div id="aoa-big">0.0°</div>
+      <div id="aoa-fb">Arduino: waiting…</div>
+      <div class="sep"></div>
+
+      <div class="row" style="margin-bottom:4px">
+        <span style="font-size:10px;color:var(--dim);white-space:nowrap">-40°</span>
+        <input type="range" id="aoa-slider" class="yellow" min="-400" max="200" value="0"
+               style="flex:1;margin:0 6px" oninput="onAoaSlider(this.value)">
+        <span style="font-size:10px;color:var(--dim);white-space:nowrap">+20°</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;font-size:8px;color:var(--dim);margin-bottom:6px;padding:0 2px">
+        <span>-40°</span><span>-20°</span><span>0°</span><span>+10°</span><span>+20°</span>
+      </div>
+      <div class="sep"></div>
+
+      <div style="font-size:8px;color:var(--dim);font-weight:bold;margin-bottom:4px">FINE STEP</div>
+      <div class="step-row" style="margin-bottom:6px">
+        <button class="btn-small yellow" onclick="stepAoa(-5)" style="flex:1">−5°</button>
+        <button class="btn-small yellow" onclick="stepAoa(-1)" style="flex:1">−1°</button>
+        <button class="btn-small yellow" onclick="stepAoa(-0.5)" style="flex:1">−0.5°</button>
+        <button class="btn-small green"  onclick="setAoa(0)"    style="flex:1">0°</button>
+        <button class="btn-small yellow" onclick="stepAoa(0.5)" style="flex:1">+0.5°</button>
+        <button class="btn-small yellow" onclick="stepAoa(1)"   style="flex:1">+1°</button>
+        <button class="btn-small yellow" onclick="stepAoa(5)"   style="flex:1">+5°</button>
+      </div>
+      <div class="sep"></div>
+
+      <div style="font-size:8px;color:var(--dim);font-weight:bold;margin-bottom:4px">PRESETS</div>
+      <div class="preset-row">
+        <button class="btn-small yellow" onclick="setAoa(-40)" style="flex:1">-40°</button>
+        <button class="btn-small yellow" onclick="setAoa(-30)" style="flex:1">-30°</button>
+        <button class="btn-small yellow" onclick="setAoa(-20)" style="flex:1">-20°</button>
+        <button class="btn-small yellow" onclick="setAoa(-15)" style="flex:1">-15°</button>
+      </div>
+      <div class="preset-row">
+        <button class="btn-small yellow" onclick="setAoa(-10)" style="flex:1">-10°</button>
+        <button class="btn-small yellow" onclick="setAoa(-5)"  style="flex:1">-5°</button>
+        <button class="btn-small yellow" onclick="setAoa(0)"   style="flex:1">0°</button>
+        <button class="btn-small yellow" onclick="setAoa(5)"   style="flex:1">+5°</button>
+      </div>
+      <div class="preset-row">
+        <button class="btn-small yellow" onclick="setAoa(10)"  style="flex:1">+10°</button>
+        <button class="btn-small yellow" onclick="setAoa(15)"  style="flex:1">+15°</button>
+        <button class="btn-small yellow" onclick="setAoa(20)"  style="flex:1">+20°</button>
+      </div>
+      <div class="sep"></div>
+
+      <div class="row">
+        <span class="row-label">EXACT:</span>
+        <input type="number" id="spin-aoa" value="0" step="0.5" min="-90" max="90"
+               style="flex:1;width:80px" oninput="syncAoaSpin()">
+        <span style="color:var(--dim);margin:0 2px">°</span>
+        <button class="btn-small yellow" onclick="sendAoaSpin()" style="padding:5px 10px">SEND</button>
+      </div>
+    </div>
+
+    <!-- Live Readout -->
+    <div class="group">
+      <div class="group-title" style="color:var(--accent)">LIVE READOUT</div>
+      <div id="readout-wrap">
+        <!-- LIFT -->
+        <div class="ch-panel lift">
+          <div class="ch-label lift">LIFT  (Cell 1)</div>
+          <div class="dim-tiny" style="text-align:center">RAW</div>
+          <div class="val-raw lift" id="lbl-lift-raw">— g</div>
+          <div class="dim-tiny" style="text-align:center">FILTERED</div>
+          <div class="val-filt lift" id="lbl-lift-filt">—</div>
+          <div class="dim-tiny" style="text-align:center">grams</div>
+          <div class="stat-grid">
+            <div class="stat-item"><span class="stat-key">MIN</span><span class="stat-val" id="stat-lift-min">—</span></div>
+            <div class="stat-item"><span class="stat-key">MAX</span><span class="stat-val" id="stat-lift-max">—</span></div>
+            <div class="stat-item"><span class="stat-key">AVG</span><span class="stat-val" id="stat-lift-avg">—</span></div>
+            <div class="stat-item"><span class="stat-key">σ</span><span class="stat-val" id="stat-lift-std">—</span></div>
+          </div>
+          <div style="font-size:8px;color:var(--dim);margin-top:2px" id="calstat-lift">Offset:0.00g DZ:0.0g Clamp:ON</div>
+        </div>
+        <!-- DRAG -->
+        <div class="ch-panel drag">
+          <div class="ch-label drag">DRAG  (Cell 2)</div>
+          <div class="dim-tiny" style="text-align:center">RAW</div>
+          <div class="val-raw drag" id="lbl-drag-raw">— g</div>
+          <div class="dim-tiny" style="text-align:center">FILTERED</div>
+          <div class="val-filt drag" id="lbl-drag-filt">—</div>
+          <div class="dim-tiny" style="text-align:center">grams</div>
+          <div class="stat-grid">
+            <div class="stat-item"><span class="stat-key">MIN</span><span class="stat-val" id="stat-drag-min">—</span></div>
+            <div class="stat-item"><span class="stat-key">MAX</span><span class="stat-val" id="stat-drag-max">—</span></div>
+            <div class="stat-item"><span class="stat-key">AVG</span><span class="stat-val" id="stat-drag-avg">—</span></div>
+            <div class="stat-item"><span class="stat-key">σ</span><span class="stat-val" id="stat-drag-std">—</span></div>
+          </div>
+          <div class="sep" style="margin:4px 0"></div>
+          <div class="ld-ratio-label">L/D RATIO</div>
+          <div class="ld-ratio-val" id="lbl-ld">—</div>
+          <div style="font-size:8px;color:var(--dim);margin-top:2px" id="calstat-drag">Offset:0.00g DZ:0.0g Clamp:ON</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Filter Settings -->
+    <div class="group">
+      <div class="group-title" style="color:var(--accent)">FILTER SETTINGS</div>
+      <div class="dim-tiny" style="margin-bottom:6px">Applied equally to both channels</div>
+      <div style="font-size:8px;color:var(--dim);font-weight:bold;margin-bottom:4px">FILTER TYPE</div>
+      <div class="filter-row">
+        <button class="filter-btn" id="fb-movavg" onclick="setFilter('movavg')">MOV AVG</button>
+        <button class="filter-btn active" id="fb-median" onclick="setFilter('median')">MEDIAN</button>
+        <button class="filter-btn" id="fb-ema" onclick="setFilter('ema')">EMA</button>
+        <button class="filter-btn" id="fb-savgol" onclick="setFilter('savgol')">SAV-GOL</button>
+        <button class="filter-btn" id="fb-none" onclick="setFilter('none')">NONE</button>
+      </div>
+      <div class="filter-desc" id="filter-desc">Kills zero-spike dropouts ★ — recommended for HX711</div>
+      <div class="sep"></div>
+
+      <div id="win-container">
+        <div class="row" style="margin-bottom:2px">
+          <span style="font-size:9px;color:var(--dim);font-weight:bold">WINDOW</span>
+          <span style="flex:1"></span>
+          <span style="font-size:11px;color:var(--accent);font-weight:bold" id="lbl-win">20</span>
+        </div>
+        <input type="range" id="sl-win" class="accent" min="3" max="80" value="20"
+               oninput="document.getElementById('lbl-win').textContent=this.value">
+        <div style="display:flex;justify-content:space-between;font-size:8px;color:var(--dim);margin-top:2px">
+          <span>3</span><span>40</span><span>80</span>
+        </div>
+        <div class="sep"></div>
+      </div>
+
+      <div id="alpha-container" style="display:none">
+        <div class="row" style="margin-bottom:2px">
+          <span style="font-size:9px;color:var(--dim);font-weight:bold">ALPHA</span>
+          <span style="flex:1"></span>
+          <span style="font-size:11px;color:var(--yellow);font-weight:bold" id="lbl-alpha">0.15</span>
+        </div>
+        <input type="range" id="sl-alpha" class="yellow" min="1" max="100" value="15"
+               oninput="document.getElementById('lbl-alpha').textContent=(this.value/100).toFixed(2)">
+        <div class="sep"></div>
+      </div>
+
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:10px;color:var(--text)">
+        <input type="checkbox" id="chk-raw" checked> Show raw traces
+      </label>
+      <div class="sep"></div>
+
+      <button class="btn-primary yellow" style="margin-bottom:6px" onclick="doTare()">⟳  TARE BOTH SENSORS</button>
+      <button class="btn-small" style="width:100%" onclick="clearAll()">✕  CLEAR ALL DATA</button>
+    </div>
+
+    <!-- Zero Calibration -->
+    <div class="group">
+      <div class="group-title" style="color:var(--green)">ZERO CALIBRATION</div>
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:10px;color:var(--green);margin-bottom:6px">
+        <input type="checkbox" id="chk-az" onchange="toggleAutoZero(this.checked)">
+        Auto-zero when no load detected
+      </label>
+      <div style="font-size:8px;color:var(--dim);background:rgba(0,229,138,0.05);border-left:2px solid rgba(0,229,138,0.25);padding:5px 7px;border-radius:0 3px 3px 0;margin-bottom:6px;line-height:1.4">
+        Both channels stable below threshold for 3s → offset auto-set
+      </div>
+      <div class="row" style="margin-bottom:6px">
+        <span class="row-label">Threshold:</span>
+        <input type="number" id="spin-azt" value="5.0" step="0.1" min="0.1" max="50" style="width:80px">
+        <span class="row-label">g</span>
+      </div>
+      <div id="lbl-azs" style="font-size:9px;color:var(--dim)">○  Disabled</div>
+      <div class="sep"></div>
+
+      <div class="tab-bar">
+        <button class="tab-btn active" onclick="showCalTab('lift',this)">LIFT (Cell 1)</button>
+        <button class="tab-btn" onclick="showCalTab('drag',this)">DRAG (Cell 2)</button>
+      </div>
+
+      <div id="cal-lift" class="tab-content active">
+        <div style="font-size:8px;color:var(--dim);font-weight:bold;margin-bottom:4px">MANUAL OFFSET</div>
+        <div class="row" style="margin-bottom:4px">
+          <input type="number" id="spin-offset-lift" value="0" step="0.5" min="-500" max="500"
+                 style="flex:1" oninput="state.lift.offset=parseFloat(this.value)||0; updateCalStat('lift')">
+          <span class="row-label">g</span>
+          <button class="btn-small" style="color:var(--accent);border-color:rgba(0,200,240,0.4)"
+                  onclick="captureOffset('lift')">CAPTURE NOW</button>
+        </div>
+        <div class="dim-tiny" style="margin-bottom:6px">Remove load → click CAPTURE NOW</div>
+        <div class="sep"></div>
+        <div style="font-size:8px;color:var(--dim);font-weight:bold;margin-bottom:4px">DEAD ZONE</div>
+        <div class="row" style="margin-bottom:2px">
+          <input type="number" id="spin-dz-lift" value="0" step="0.5" min="0" max="50"
+                 style="flex:1" oninput="state.lift.dz=parseFloat(this.value)||0; updateCalStat('lift')">
+          <span class="row-label">g</span>
+        </div>
+        <div class="dim-tiny" style="margin-bottom:4px">Below this value → forced to 0.0 g</div>
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:10px;color:var(--drag)">
+          <input type="checkbox" id="chk-clamp-lift" checked
+                 onchange="state.lift.clamp=this.checked; updateCalStat('lift')">
+          Clamp negatives to 0
+        </label>
+      </div>
+
+      <div id="cal-drag" class="tab-content">
+        <div style="font-size:8px;color:var(--dim);font-weight:bold;margin-bottom:4px">MANUAL OFFSET</div>
+        <div class="row" style="margin-bottom:4px">
+          <input type="number" id="spin-offset-drag" value="0" step="0.5" min="-500" max="500"
+                 style="flex:1" oninput="state.drag.offset=parseFloat(this.value)||0; updateCalStat('drag')">
+          <span class="row-label">g</span>
+          <button class="btn-small" style="color:var(--drag);border-color:rgba(255,107,53,0.4)"
+                  onclick="captureOffset('drag')">CAPTURE NOW</button>
+        </div>
+        <div class="dim-tiny" style="margin-bottom:6px">Remove load → click CAPTURE NOW</div>
+        <div class="sep"></div>
+        <div style="font-size:8px;color:var(--dim);font-weight:bold;margin-bottom:4px">DEAD ZONE</div>
+        <div class="row" style="margin-bottom:2px">
+          <input type="number" id="spin-dz-drag" value="0" step="0.5" min="0" max="50"
+                 style="flex:1" oninput="state.drag.dz=parseFloat(this.value)||0; updateCalStat('drag')">
+          <span class="row-label">g</span>
+        </div>
+        <div class="dim-tiny" style="margin-bottom:4px">Below this value → forced to 0.0 g</div>
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:10px;color:var(--drag)">
+          <input type="checkbox" id="chk-clamp-drag" checked
+                 onchange="state.drag.clamp=this.checked; updateCalStat('drag')">
+          Clamp negatives to 0
+        </label>
+      </div>
+    </div>
+
+    <!-- Data Export -->
+    <div class="group">
+      <div class="group-title" style="color:var(--accent)">DATA EXPORT</div>
+      <div id="rec-count">0 samples recorded</div>
+      <button class="btn-primary green" id="btn-rec" onclick="toggleRecord()" style="margin-bottom:6px">▶  START RECORDING</button>
+      <button class="btn-primary" onclick="exportCSV()">⬇  EXPORT CSV</button>
+    </div>
+
+    <!-- Serial Monitor -->
+    <div class="group">
+      <div class="group-title" style="color:var(--accent)">SERIAL MONITOR</div>
+      <div id="serial-mon"></div>
+      <div style="font-size:8px;color:var(--drag);margin-top:4px">Blank after connect → wrong baud rate</div>
+    </div>
+
+  </div><!-- /sidebar -->
+
+  <!-- ════════════════════ PLOTS ════════════════════ -->
+  <div id="plots-area">
+    <div class="plot-wrap">
+      <div class="plot-title" style="color:var(--accent)">▲ LIFT FORCE vs TIME</div>
+      <canvas id="chart-lift"></canvas>
+    </div>
+    <div class="plot-wrap">
+      <div class="plot-title" style="color:var(--drag)">▶ DRAG FORCE vs TIME</div>
+      <canvas id="chart-drag"></canvas>
+    </div>
+    <div class="plot-wrap">
+      <div class="plot-title" style="color:var(--purple)">◆ L/D RATIO vs TIME</div>
+      <canvas id="chart-ld"></canvas>
+    </div>
+    <div class="plot-wrap">
+      <div class="plot-title" style="color:var(--accent)">↗ LIFT vs ANGLE OF ATTACK</div>
+      <canvas id="chart-lift-aoa"></canvas>
+    </div>
+    <div class="plot-wrap">
+      <div class="plot-title" style="color:var(--drag)">↗ DRAG vs ANGLE OF ATTACK</div>
+      <canvas id="chart-drag-aoa"></canvas>
+    </div>
+    <div class="plot-wrap">
+      <div class="plot-title" style="color:var(--green)">⬤ DRAG POLAR — Lift vs Drag</div>
+      <canvas id="chart-polar"></canvas>
+    </div>
+  </div>
+</div>
+
+<!-- Status bar -->
+<div id="statusbar">Disconnected — select COM port and click CONNECT, or use DEMO MODE</div>
+
+<script>
+// ════════════════════════════════════════════════════════════
+// STATE
+// ════════════════════════════════════════════════════════════
+const MAX_PTS  = 600;
+const AOA_PTS  = 800;
+const MIN_Y_G  = 15;
+
+const state = {
+  lift: { offset: 0, dz: 0, clamp: true, raw: [], time: [], t0: null },
+  drag: { offset: 0, dz: 0, clamp: true, raw: [], time: [], t0: null },
+  aoa: 0,
+  aoa_polar: [],   // {aoa, lift, drag}
+  records: [],
+  recording: false,
+  filter: 'median',
+  win: 20,
+  alpha: 0.15,
+  showRaw: true,
+  autoZero: false,
+  azThresh: 5.0,
+  azStableSince: null,
+};
+
+// Serial
+let serialPort = null;
+let serialReader = null;
+let serialWriter = null;
+let serialLineBuffer = '';
+let demoInterval = null;
+let demoTime = 0;
+
+// ════════════════════════════════════════════════════════════
+// CHARTS
+// ════════════════════════════════════════════════════════════
+Chart.defaults.color = '#3A5570';
+Chart.defaults.borderColor = 'rgba(25,45,68,0.6)';
+Chart.defaults.font.family = "'Share Tech Mono', monospace";
+Chart.defaults.font.size = 9;
+
+function mkChart(id, yLabel, xLabel, datasets) {
+  const ctx = document.getElementById(id);
+  return new Chart(ctx, {
+    type: 'line',
+    data: { datasets },
+    options: {
+      animation: false,
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'nearest', intersect: false },
+      plugins: { legend: { display: datasets.length > 1, labels: { boxWidth: 10, padding: 8, color: '#C8DCF0' } } },
+      scales: {
+        x: { type: 'linear', title: { display: true, text: xLabel, color: '#3A5570' },
+             grid: { color: 'rgba(25,45,68,0.5)' }, ticks: { maxTicksLimit: 6 } },
+        y: { title: { display: true, text: yLabel, color: '#3A5570' },
+             grid: { color: 'rgba(25,45,68,0.5)' } }
+      }
+    }
+  });
+}
+
+const C = {
+  accent: '#00C8F0', drag: '#FF6B35', green: '#00E58A',
+  purple: '#A78BFA', yellow: '#FFD060',
+  rawL: 'rgba(26,90,140,0.6)', rawD: 'rgba(140,60,20,0.6)'
+};
+
+const chartLift = mkChart('chart-lift', 'Lift (g)', 'Time (s)', [
+  { label: 'Raw',      data: [], borderColor: C.rawL, borderWidth: 1, pointRadius: 0, tension: 0 },
+  { label: 'Filtered', data: [], borderColor: C.accent, borderWidth: 2, pointRadius: 0, tension: 0 }
+]);
+
+const chartDrag = mkChart('chart-drag', 'Drag (g)', 'Time (s)', [
+  { label: 'Raw',      data: [], borderColor: C.rawD, borderWidth: 1, pointRadius: 0, tension: 0 },
+  { label: 'Filtered', data: [], borderColor: C.drag, borderWidth: 2, pointRadius: 0, tension: 0 }
+]);
+
+const chartLd = mkChart('chart-ld', 'L/D', 'Time (s)', [
+  { label: 'L/D', data: [], borderColor: C.purple, borderWidth: 2, pointRadius: 0, tension: 0 }
+]);
+
+const chartLiftAoa = mkChart('chart-lift-aoa', 'Lift (g)', 'AoA (°)', [
+  { label: 'Points', data: [], borderColor: 'transparent', backgroundColor: C.accent+'99',
+    pointRadius: 4, showLine: false },
+  { label: 'Line',   data: [], borderColor: C.accent, borderWidth: 2, pointRadius: 0, tension: 0 },
+  { label: 'Now',    data: [], borderColor: '#FFFFFF', backgroundColor: C.accent,
+    pointRadius: 8, showLine: false }
+]);
+
+const chartDragAoa = mkChart('chart-drag-aoa', 'Drag (g)', 'AoA (°)', [
+  { label: 'Points', data: [], borderColor: 'transparent', backgroundColor: C.drag+'99',
+    pointRadius: 4, showLine: false },
+  { label: 'Line',   data: [], borderColor: C.drag, borderWidth: 2, pointRadius: 0, tension: 0 },
+  { label: 'Now',    data: [], borderColor: '#FFFFFF', backgroundColor: C.drag,
+    pointRadius: 8, showLine: false }
+]);
+
+const chartPolar = mkChart('chart-polar', 'Lift (g)', 'Drag (g)', [
+  { label: 'Polar',   data: [], borderColor: 'transparent', backgroundColor: C.green+'88',
+    pointRadius: 4, showLine: false },
+  { label: 'Now',     data: [], borderColor: '#FFFFFF', backgroundColor: C.green,
+    pointRadius: 9, showLine: false }
+]);
+
+// ════════════════════════════════════════════════════════════
+// FILTERS
+// ════════════════════════════════════════════════════════════
+function applyFilter(arr) {
+  if (arr.length < 2) return [...arr];
+  const f = state.filter;
+  const w = parseInt(document.getElementById('sl-win').value) || 20;
+  const a = parseFloat(document.getElementById('sl-alpha').value) / 100 || 0.15;
+
+  if (f === 'movavg') return movAvg(arr, w);
+  if (f === 'median')  return median(arr, w);
+  if (f === 'ema')     return ema(arr, a);
+  if (f === 'savgol')  return savgol(arr, w);
+  return [...arr];
+}
+
+function movAvg(d, w) {
+  const r = new Float64Array(d.length);
+  for (let i = 0; i < d.length; i++) {
+    const lo = Math.max(0, i - Math.floor(w/2));
+    const hi = Math.min(d.length, i + Math.floor(w/2) + 1);
+    let s = 0; for (let j = lo; j < hi; j++) s += d[j];
+    r[i] = s / (hi - lo);
+  }
+  return Array.from(r);
+}
+
+function median(d, w) {
+  const r = new Float64Array(d.length);
+  for (let i = 0; i < d.length; i++) {
+    const lo = Math.max(0, i - Math.floor(w/2));
+    const hi = Math.min(d.length, i + Math.floor(w/2) + 1);
+    const slice = d.slice(lo, hi).sort((a,b)=>a-b);
+    const mid = Math.floor(slice.length/2);
+    r[i] = slice.length%2 ? slice[mid] : (slice[mid-1]+slice[mid])/2;
+  }
+  return Array.from(r);
+}
+
+function ema(d, a) {
+  const r = new Float64Array(d.length); r[0] = d[0];
+  for (let i = 1; i < d.length; i++) r[i] = a*d[i] + (1-a)*r[i-1];
+  return Array.from(r);
+}
+
+function savgol(d, w) {
+  // Simple polynomial smoothing approx (no scipy — use weighted moving avg as proxy)
+  const ww = Math.max(w % 2 === 0 ? w+1 : w, 5);
+  return movAvg(d, ww);
+}
+
+// ════════════════════════════════════════════════════════════
+// CHANNEL STATE HELPERS
+// ════════════════════════════════════════════════════════════
+function condition(ch, raw) {
+  let v = raw - ch.offset;
+  if (Math.abs(v) < ch.dz) v = 0;
+  if (ch.clamp && v < 0)   v = 0;
+  return v;
+}
+
+function pushSample(chName, rawVal, t) {
+  const ch = state[chName];
+  if (ch.t0 === null) ch.t0 = t;
+  ch.time.push(t - ch.t0);
+  ch.raw.push(condition(ch, rawVal));
+  if (ch.raw.length > MAX_PTS) { ch.raw.shift(); ch.time.shift(); }
+}
+
+// ════════════════════════════════════════════════════════════
+// DATA INGESTION
+// ════════════════════════════════════════════════════════════
+function onData(rawLift, rawDrag, aoa) {
+  const t = performance.now() / 1000;
+  state.aoa = aoa;
+
+  pushSample('lift', rawLift, t);
+  pushSample('drag', rawDrag, t);
+
+  // Auto-zero
+  if (state.autoZero) checkAutoZero(rawLift, rawDrag);
+
+  // Recording
+  if (state.recording) {
+    const lFilt = state.lift.raw.length ? state.lift.raw[state.lift.raw.length-1] : 0;
+    const dFilt = state.drag.raw.length ? state.drag.raw[state.drag.raw.length-1] : 0;
+    const tRel  = state.lift.t0 ? t - state.lift.t0 : 0;
+    state.records.push([tRel.toFixed(3), aoa.toFixed(2), rawLift.toFixed(2),
+                        rawDrag.toFixed(2), lFilt.toFixed(2), dFilt.toFixed(2)]);
+    document.getElementById('rec-count').textContent = `${state.records.length} samples recorded`;
+  }
+}
+
+// ════════════════════════════════════════════════════════════
+// UI REFRESH (50ms)
+// ════════════════════════════════════════════════════════════
+let _refreshTick = 0;
+function refresh() {
+  _refreshTick++;
+  if (state.lift.raw.length < 2) return;
+
+  const lRaw  = state.lift.raw;
+  const dRaw  = state.drag.raw;
+  const lt    = state.lift.time;
+  const dt    = state.drag.time;
+  const lFilt = applyFilter(lRaw);
+  const dFilt = applyFilter(dRaw);
+  const lastL = lFilt[lFilt.length-1];
+  const lastD = dFilt[dFilt.length-1];
+  const lastT_l = lt[lt.length-1];
+  const lastT_d = dt[dt.length-1];
+
+  // Time-series charts
+  const showRaw = document.getElementById('chk-raw').checked;
+  chartLift.data.datasets[0].data = showRaw ? lt.map((x,i)=>({x,y:lRaw[i]})) : [];
+  chartLift.data.datasets[1].data = lt.map((x,i)=>({x,y:lFilt[i]}));
+  chartDrag.data.datasets[0].data = showRaw ? dt.map((x,i)=>({x,y:dRaw[i]})) : [];
+  chartDrag.data.datasets[1].data = dt.map((x,i)=>({x,y:dFilt[i]}));
+
+  // L/D ratio
+  const n   = Math.min(lFilt.length, dFilt.length);
+  const ldArr = [];
+  for (let i = 0; i < n; i++) {
+    const ld = Math.abs(dFilt[i]) > 0.5 ? lFilt[i] / dFilt[i] : 0;
+    ldArr.push({x: lt[i], y: ld});
+  }
+  chartLd.data.datasets[0].data = ldArr;
+
+  const lastLd = ldArr.length ? ldArr[ldArr.length-1].y : 0;
+
+  chartLift.update('none');
+  chartDrag.update('none');
+  chartLd.update('none');
+
+  // Readout labels
+  const rawLiftLast = lRaw[lRaw.length-1] + state.lift.offset;
+  const rawDragLast = dRaw[dRaw.length-1] + state.drag.offset;
+  document.getElementById('lbl-lift-raw').textContent  = `${rawLiftLast.toFixed(2)} g`;
+  document.getElementById('lbl-drag-raw').textContent  = `${rawDragLast.toFixed(2)} g`;
+  document.getElementById('lbl-lift-filt').textContent = lastL.toFixed(2);
+  document.getElementById('lbl-drag-filt').textContent = lastD.toFixed(2);
+  document.getElementById('lbl-ld').textContent        = lastLd.toFixed(2);
+
+  // Stats
+  function stats(arr) {
+    const mn = Math.min(...arr), mx = Math.max(...arr);
+    const mean = arr.reduce((a,b)=>a+b,0)/arr.length;
+    const std  = Math.sqrt(arr.reduce((a,b)=>a+(b-mean)**2,0)/arr.length);
+    return {mn,mx,mean,std};
+  }
+  const sl = stats(lRaw), sd = stats(dRaw);
+  document.getElementById('stat-lift-min').textContent = sl.mn.toFixed(1)+'g';
+  document.getElementById('stat-lift-max').textContent = sl.mx.toFixed(1)+'g';
+  document.getElementById('stat-lift-avg').textContent = sl.mean.toFixed(1)+'g';
+  document.getElementById('stat-lift-std').textContent = sl.std.toFixed(2)+'g';
+  document.getElementById('stat-drag-min').textContent = sd.mn.toFixed(1)+'g';
+  document.getElementById('stat-drag-max').textContent = sd.mx.toFixed(1)+'g';
+  document.getElementById('stat-drag-avg').textContent = sd.mean.toFixed(1)+'g';
+  document.getElementById('stat-drag-std').textContent = sd.std.toFixed(2)+'g';
+
+  // AoA polar (every 5 ticks)
+  if (_refreshTick % 5 === 0) {
+    if (state.aoa_polar.length > AOA_PTS) state.aoa_polar.shift();
+    state.aoa_polar.push({aoa: state.aoa, lift: lastL, drag: lastD});
+
+    const polar = state.aoa_polar;
+    const sorted = [...polar].sort((a,b)=>a.aoa-b.aoa);
+
+    chartLiftAoa.data.datasets[0].data = polar.map(p=>({x:p.aoa,y:p.lift}));
+    chartLiftAoa.data.datasets[1].data = sorted.map(p=>({x:p.aoa,y:p.lift}));
+    chartLiftAoa.data.datasets[2].data = [{x:state.aoa,y:lastL}];
+    chartDragAoa.data.datasets[0].data = polar.map(p=>({x:p.aoa,y:p.drag}));
+    chartDragAoa.data.datasets[1].data = sorted.map(p=>({x:p.aoa,y:p.drag}));
+    chartDragAoa.data.datasets[2].data = [{x:state.aoa,y:lastD}];
+    chartPolar.data.datasets[0].data   = polar.map(p=>({x:p.drag,y:p.lift}));
+    chartPolar.data.datasets[1].data   = [{x:lastD,y:lastL}];
+
+    chartLiftAoa.update('none');
+    chartDragAoa.update('none');
+    chartPolar.update('none');
+  }
+
+  // AoA display color
+  updateAoaUi(state.aoa);
+}
+
+setInterval(refresh, 50);
+
+// ════════════════════════════════════════════════════════════
+// AoA UI
+// ════════════════════════════════════════════════════════════
+function updateAoaUi(angle) {
+  const el = document.getElementById('aoa-big');
+  el.textContent = (angle >= 0 ? '+' : '') + angle.toFixed(1) + '°';
+  const col = Math.abs(angle) < 5 ? 'var(--green)' : Math.abs(angle) < 15 ? 'var(--yellow)' : 'var(--drag)';
+  el.style.color = col;
+  el.style.borderColor = col+'44';
+  el.style.background  = col.replace('var(','').replace(')','') + '0D';
+  // Use inline rgba fallback
+  if (Math.abs(angle) < 5) {
+    el.style.cssText = `color:var(--green);border:1px solid rgba(0,229,138,0.3);background:rgba(0,229,138,0.04);text-align:center;font-family:'Orbitron',monospace;font-size:36px;font-weight:900;padding:8px;border-radius:8px;line-height:1;margin-bottom:4px;`;
+  } else if (Math.abs(angle) < 15) {
+    el.style.cssText = `color:var(--yellow);border:1px solid rgba(255,208,96,0.3);background:rgba(255,208,96,0.04);text-align:center;font-family:'Orbitron',monospace;font-size:36px;font-weight:900;padding:8px;border-radius:8px;line-height:1;margin-bottom:4px;`;
+  } else {
+    el.style.cssText = `color:var(--drag);border:1px solid rgba(255,107,53,0.3);background:rgba(255,107,53,0.04);text-align:center;font-family:'Orbitron',monospace;font-size:36px;font-weight:900;padding:8px;border-radius:8px;line-height:1;margin-bottom:4px;`;
+  }
+}
+
+function setAoa(angle) {
+  angle = Math.max(-90, Math.min(90, Math.round(angle * 10) / 10));
+  state.aoa = angle;
+  document.getElementById('aoa-slider').value = angle * 10;
+  document.getElementById('spin-aoa').value   = angle;
+  updateAoaUi(angle);
+  sendAoa(angle);
+}
+
+function stepAoa(delta)  { setAoa(state.aoa + delta); }
+function onAoaSlider(v)  { setAoa(parseFloat(v) / 10); }
+function syncAoaSpin()   { /* live sync on spin change */ }
+function sendAoaSpin()   { setAoa(parseFloat(document.getElementById('spin-aoa').value) || 0); }
+
+// ════════════════════════════════════════════════════════════
+// FILTER CONTROLS
+// ════════════════════════════════════════════════════════════
+const filterDescs = {
+  movavg: 'General smoothing — good default',
+  median: 'Kills zero-spike dropouts ★ — recommended for HX711',
+  ema:    'Fast response with tuneable alpha',
+  savgol: 'Best curve shape — preserves peaks (SG approx)',
+  none:   'Raw unfiltered signal'
+};
+
+function setFilter(name) {
+  state.filter = name;
+  document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('fb-'+name).classList.add('active');
+  document.getElementById('filter-desc').textContent = filterDescs[name];
+  document.getElementById('win-container').style.display   = (name === 'none' || name === 'ema') ? 'none' : 'block';
+  document.getElementById('alpha-container').style.display = (name === 'ema') ? 'block' : 'none';
+}
+
+// ════════════════════════════════════════════════════════════
+// CALIBRATION
+// ════════════════════════════════════════════════════════════
+function showCalTab(which, btn) {
+  document.getElementById('cal-lift').classList.remove('active');
+  document.getElementById('cal-drag').classList.remove('active');
+  document.getElementById('cal-'+which).classList.add('active');
+  document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+}
+
+function captureOffset(ch) {
+  const arr = state[ch].raw;
+  if (arr.length < 5) { setStatus('Not enough data to capture offset'); return; }
+  const last20 = arr.slice(-20);
+  const mean = last20.reduce((a,b)=>a+b,0)/last20.length;
+  state[ch].offset += mean;
+  document.getElementById(`spin-offset-${ch}`).value = state[ch].offset.toFixed(2);
+  updateCalStat(ch);
+  setStatus(`${ch.toUpperCase()} auto-zero → ${state[ch].offset.toFixed(2)}g`);
+}
+
+function updateCalStat(ch) {
+  const c = state[ch];
+  document.getElementById(`calstat-${ch}`).textContent =
+    `Offset:${c.offset.toFixed(2)}g  DZ:${c.dz.toFixed(1)}g  Clamp:${c.clamp?'ON':'OFF'}`;
+}
+
+function toggleAutoZero(on) {
+  state.autoZero = on;
+  state.azStableSince = null;
+  const el = document.getElementById('lbl-azs');
+  el.textContent = on ? '◉  Watching both channels…' : '○  Disabled';
+  el.style.color = on ? 'var(--green)' : 'var(--dim)';
+}
+
+function checkAutoZero(lf, df) {
+  const thresh = parseFloat(document.getElementById('spin-azt').value) || 5;
+  const now = performance.now() / 1000;
+  const el  = document.getElementById('lbl-azs');
+  if (Math.abs(lf) <= thresh && Math.abs(df) <= thresh) {
+    if (!state.azStableSince) state.azStableSince = now;
+    const rem = Math.max(0, 3 - (now - state.azStableSince));
+    el.textContent = `◉  No load — zeroing in ${rem.toFixed(1)}s…`;
+    el.style.color = 'var(--yellow)';
+    if (now - state.azStableSince >= 3.0) {
+      captureOffset('lift'); captureOffset('drag');
+      state.azStableSince = null;
+      el.textContent = '✓  Both channels auto-zeroed';
+      el.style.color = 'var(--green)';
+    }
+  } else {
+    state.azStableSince = null;
+    el.textContent = '◉  Load detected — watching…';
+    el.style.color = 'var(--dim)';
+  }
+}
+
+function doTare() {
+  sendSerial('t\n');
+  setStatus('Tare sent to both sensors…');
+}
+
+function clearAll() {
+  state.lift.raw = []; state.lift.time = []; state.lift.t0 = null;
+  state.drag.raw = []; state.drag.time = []; state.drag.t0 = null;
+  state.aoa_polar = [];
+  [chartLift,chartDrag,chartLd,chartLiftAoa,chartDragAoa,chartPolar].forEach(c=>{
+    c.data.datasets.forEach(d=>d.data=[]);
+    c.update('none');
+  });
+  setStatus('All data cleared');
+}
+
+// ════════════════════════════════════════════════════════════
+// RECORDING & EXPORT
+// ════════════════════════════════════════════════════════════
+function toggleRecord() {
+  state.recording = !state.recording;
+  const btn = document.getElementById('btn-rec');
+  btn.textContent = state.recording ? '■  STOP RECORDING' : '▶  START RECORDING';
+  btn.className   = state.recording ? 'btn-primary red' : 'btn-primary green';
+  if (!state.recording) setStatus(`Stopped — ${state.records.length} samples`);
+  else { state.records = []; setStatus('Recording started…'); }
+}
+
+function exportCSV() {
+  if (!state.records.length) { setStatus('No data to export'); return; }
+  const header = 'Time (s),AoA (deg),Lift Raw (g),Drag Raw (g),Lift Filt (g),Drag Filt (g)\n';
+  const body   = state.records.map(r=>r.join(',')).join('\n');
+  const blob   = new Blob([header+body], {type:'text/csv'});
+  const url    = URL.createObjectURL(blob);
+  const a      = document.createElement('a');
+  a.href = url; a.download = `wind_tunnel_${Date.now()}.csv`; a.click();
+  URL.revokeObjectURL(url);
+  setStatus(`Exported ${state.records.length} records`);
+}
+
+// ════════════════════════════════════════════════════════════
+// SERIAL (Web Serial API)
+// ════════════════════════════════════════════════════════════
+function hasSerial() { return 'serial' in navigator; }
+
+async function refreshPorts() {
+  if (!hasSerial()) {
+    document.getElementById('serial-notice').style.display = 'block';
+    return;
+  }
+}
+
+async function toggleConnect() {
+  const btn = document.getElementById('btn-connect');
+  if (serialPort) {
+    await disconnectSerial();
+  } else {
+    await connectSerial();
+  }
+}
+
+async function connectSerial() {
+  if (!hasSerial()) {
+    document.getElementById('serial-notice').style.display = 'block';
+    setStatus('Web Serial not supported — use Chrome/Edge or DEMO MODE');
+    return;
+  }
+  try {
+    const baud = parseInt(document.getElementById('sel-baud').value);
+    serialPort = await navigator.serial.requestPort();
+    await serialPort.open({ baudRate: baud });
+    serialWriter = serialPort.writable.getWriter();
+
+    // Stop demo if running
+    if (demoInterval) { clearInterval(demoInterval); demoInterval = null; document.getElementById('demo-badge').style.display='none'; }
+
+    document.getElementById('conn-status').textContent = '● ONLINE';
+    document.getElementById('conn-status').className   = 'online';
+    document.getElementById('btn-connect').textContent = 'DISCONNECT';
+    setStatus(`Connected @ ${baud} baud`);
+
+    // Read loop
+    const decoder = new TextDecoderStream();
+    serialPort.readable.pipeTo(decoder.writable);
+    serialReader = decoder.readable.getReader();
+    readSerialLoop();
+  } catch(e) {
+    setStatus(`Connection failed: ${e.message}`);
+    serialPort = null;
+  }
+}
+
+async function readSerialLoop() {
+  try {
+    while (true) {
+      const {value, done} = await serialReader.read();
+      if (done) break;
+      serialLineBuffer += value;
+      const lines = serialLineBuffer.split('\n');
+      serialLineBuffer = lines.pop();
+      lines.forEach(processSerialLine);
+    }
+  } catch(e) { setStatus(`Serial read error: ${e.message}`); }
+}
+
+function processSerialLine(line) {
+  line = line.trim();
+  if (!line) return;
+  logSerial(line);
+
+  if (line.includes('Tare load cell') || line.includes('Tare complete')) {
+    setStatus('Tare complete ✓');
+    document.getElementById('aoa-fb').textContent = 'Tare complete ✓';
+    return;
+  }
+  if (line.startsWith('AOA_SET:')) {
+    const m = line.match(/([-+]?\d+\.?\d*)/);
+    if (m) {
+      const v = parseFloat(m[1]);
+      state.aoa = v;
+      document.getElementById('aoa-fb').textContent = `✓ Arduino confirmed: ${v >= 0 ? '+' : ''}${v.toFixed(2)}°`;
+    }
+    return;
+  }
+  if (line.includes('Load_cell 1 output val:')) {
+    const parts = line.split('output val:');
+    const floats = [];
+    for (let i = 1; i < parts.length; i++) {
+      const m = parts[i].match(/([-+]?\d+\.?\d*)/);
+      if (m) floats.push(parseFloat(m[1]));
+    }
+    const aoaM = line.match(/AOA:\s*([-+]?\d+\.?\d*)/);
+    const aoa  = aoaM ? parseFloat(aoaM[1]) : state.aoa;
+    if (floats.length >= 2) onData(floats[0], floats[1], aoa);
+    else if (floats.length === 1) { onData(floats[0], 0, aoa); setStatus('WARNING: Only 1 load cell detected'); }
+  }
+}
+
+async function disconnectSerial() {
+  try {
+    if (serialReader) { await serialReader.cancel(); serialReader = null; }
+    if (serialWriter) { serialWriter.releaseLock(); serialWriter = null; }
+    if (serialPort)   { await serialPort.close(); serialPort = null; }
+  } catch(e) {}
+  document.getElementById('conn-status').textContent = '● OFFLINE';
+  document.getElementById('conn-status').className   = 'offline';
+  document.getElementById('btn-connect').textContent = 'CONNECT';
+  setStatus('Disconnected');
+}
+
+async function sendSerial(msg) {
+  if (serialWriter) {
+    const enc = new TextEncoder();
+    await serialWriter.write(enc.encode(msg));
+  }
+}
+
+async function sendAoa(angle) {
+  sendSerial(`A${angle.toFixed(2)}\n`);
+}
+
+// ════════════════════════════════════════════════════════════
+// DEMO MODE
+// ════════════════════════════════════════════════════════════
+function startDemo() {
+  if (demoInterval) { clearInterval(demoInterval); demoInterval = null; }
+  if (serialPort) disconnectSerial();
+
+  demoTime = 0;
+  document.getElementById('demo-badge').style.display = 'inline-block';
+  document.getElementById('conn-status').textContent = '● ONLINE (DEMO)';
+  document.getElementById('conn-status').className   = 'online';
+  document.getElementById('btn-connect').textContent = 'DISCONNECT';
+  setStatus('Demo mode — simulated HX711 data');
+
+  // Simulate a slow AoA sweep cycling -10° → +15°
+  let sweepAoa = -10;
+  let sweepDir = 1;
+
+  demoInterval = setInterval(() => {
+    demoTime += 0.02;
+    // Slowly sweep AoA
+    sweepAoa += sweepDir * 0.02;
+    if (sweepAoa >  15) sweepDir = -1;
+    if (sweepAoa < -10) sweepDir =  1;
+    state.aoa = parseFloat(sweepAoa.toFixed(1));
+
+    // Physics-ish: lift ~ sin(2*AoA), drag ~ 1 + sin²(AoA)
+    const aRad = sweepAoa * Math.PI / 180;
+    const baseLift = 80 * Math.sin(2 * aRad) + 15;
+    const baseDrag = 12 + 25 * Math.sin(aRad)**2;
+    const noise = () => (Math.random() - 0.5) * 8;
+    const spike = Math.random() < 0.02 ? (Math.random() - 0.5) * 60 : 0; // occasional spike
+
+    onData(baseLift + noise() + spike, baseDrag + noise(), sweepAoa);
+    updateAoaUi(sweepAoa);
+    document.getElementById('aoa-slider').value = sweepAoa * 10;
+    document.getElementById('spin-aoa').value   = sweepAoa.toFixed(1);
+  }, 20);
+}
+
+// ════════════════════════════════════════════════════════════
+// MISC UI
+// ════════════════════════════════════════════════════════════
+function logSerial(line) {
+  const mon = document.getElementById('serial-mon');
+  mon.textContent += line + '\n';
+  const lines = mon.textContent.split('\n');
+  if (lines.length > 30) mon.textContent = lines.slice(-28).join('\n');
+  mon.scrollTop = mon.scrollHeight;
+}
+
+function setStatus(msg) {
+  document.getElementById('statusbar').textContent = '  ' + msg;
+}
+
+// Init
+updateCalStat('lift');
+updateCalStat('drag');
+if (!hasSerial()) {
+  document.getElementById('serial-notice').style.display = 'block';
+}
+</script>
+</body>
+</html>
